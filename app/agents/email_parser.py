@@ -11,7 +11,7 @@ from app.core.config import settings
 # ─────────────────────────────────────────
 
 llm = LLM(
-    model="bedrock/anthropic.claude-3-haiku-20240307-v1:0",
+    model=f"bedrock/{settings.claude_model}",
     aws_region_name=settings.aws_region
 )
 
