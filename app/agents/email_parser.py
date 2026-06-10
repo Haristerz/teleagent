@@ -40,23 +40,27 @@ parser_agent = Agent(
 def create_parser_task(email: dict) -> Task:
     return Task(
         description=f"""
+        You are an email parser.
+        
         Parse this customer email and extract:
-        1. Core message (remove greetings/signatures)
-        2. Account number if mentioned
-        3. Key facts only
+        1. Core message - remove greetings and signatures
+        2. Account number - find if mentioned
 
-        EMAIL:
+        EMAIL TO PARSE:
         From: {email['sender']}
         Subject: {email['subject']}
         Body: {email['body']}
 
-        Return a clean summary of the core issue.
+        Return ONLY valid JSON like this:
+        {{
+            "core_message": "<actual core issue from email>",
+            "account_number": "<account number or null>"
+        }}
+
+        Do NOT copy the format literally.
+        Extract REAL values from the email above.
         """,
-        expected_output="""
-        A clean parsed version with:
-        - core_message: main issue only
-        - account_number: if found else null
-        """,
+        expected_output="Valid JSON with core_message and account_number extracted from the email",
         agent=parser_agent
     )
 
@@ -71,18 +75,39 @@ def parse_email(email: dict) -> dict:
     crew = Crew(
         agents=[parser_agent],
         tasks=[task],
-        verbose=True
+        verbose=False  # ← less noise
     )
 
     result = crew.kickoff()
-
-    return {
-        "sender": email["sender"],
-        "subject": email["subject"],
-        "core_message": str(result),
-        "account_number": None,
-        "attachments": []
-    }
+    
+    # Extract JSON from result
+    import json
+    result_str = str(result)
+    
+    try:
+        # Remove markdown if present
+        if "```json" in result_str:
+            result_str = result_str.split("```json")[1]
+            result_str = result_str.split("```")[0]
+        
+        parsed = json.loads(result_str.strip())
+        
+        return {
+            "sender": email["sender"],
+            "subject": email["subject"],
+            "core_message": parsed.get("core_message", ""),
+            "account_number": parsed.get("account_number", None),
+            "attachments": []
+        }
+    except:
+        # If JSON parsing fails
+        return {
+            "sender": email["sender"],
+            "subject": email["subject"],
+            "core_message": result_str,
+            "account_number": None,
+            "attachments": []
+        }
 
 
 # ─────────────────────────────────────────
