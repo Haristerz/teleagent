@@ -77,6 +77,19 @@ def extract_body(msg) -> str:
 
 
 # ─────────────────────────────────────────
+# ALLOWED SENDERS
+# In production, this would be a database
+# lookup against registered BT customers,
+# not a hardcoded list.
+# ─────────────────────────────────────────
+
+ALLOWED_SENDERS = [
+    "haristerz97@gmail.com",
+    # add more test customer emails here
+]
+
+
+# ─────────────────────────────────────────
 # FUNCTION 1 — Read Unread Emails
 # ─────────────────────────────────────────
 
@@ -86,6 +99,15 @@ def read_unread_emails(max_emails: int = 10) -> List[dict]:
 
     INPUT  → max_emails: how many to fetch
     OUTPUT → list of email dicts
+
+    SAFETY CHECKS:
+    → Only processes emails from ALLOWED_SENDERS
+    → Skips our own auto-replies (subject starts with "Re:")
+    → Skips emails sent FROM our own support address
+    These prevent TeleAgent from processing
+    non-customer emails (banks, spam, newsletters)
+    or its own replies as if they were new
+    customer emails.
     """
 
     emails = []
@@ -127,11 +149,42 @@ def read_unread_emails(max_emails: int = 10) -> List[dict]:
             msg = email.message_from_bytes(raw_email)
 
             # Extract all details
-            # Fix sender decoding
             sender = decode_subject(msg["From"] or "")
             subject = decode_subject(msg["Subject"])
             date    = msg["Date"] or ""
-            # Fix HTML body
+
+            # ─────────────────────────────
+            # SAFETY CHECK 1 — Only process
+            # emails from known/allowed senders
+            # ─────────────────────────────
+            is_allowed = any(
+                allowed in sender
+                for allowed in ALLOWED_SENDERS
+            )
+            if not is_allowed:
+                print(f"⏭️  Skipping non-customer sender: {sender}")
+                mail.store(email_id, "+FLAGS", "\\Seen")
+                continue
+
+            # ─────────────────────────────
+            # SAFETY CHECK 2 — Skip our own
+            # auto-generated replies
+            # ─────────────────────────────
+            if subject.startswith("Re:"):
+                print(f"⏭️  Skipping our own reply: {subject}")
+                mail.store(email_id, "+FLAGS", "\\Seen")
+                continue
+
+            # ─────────────────────────────
+            # SAFETY CHECK 3 — Skip emails
+            # sent FROM our own support address
+            # ─────────────────────────────
+            # if settings.gmail_user in sender:
+            #     print(f"⏭️  Skipping self-sent email: {sender}")
+            #     mail.store(email_id, "+FLAGS", "\\Seen")
+            #     continue
+
+            # Extract body
             body = extract_body(msg)
             if body.startswith("<!DOCTYPE") or body.startswith("<html"):
                 body = "HTML email - content not extracted"

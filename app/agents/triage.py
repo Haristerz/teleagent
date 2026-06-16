@@ -69,7 +69,10 @@ def create_triage_task(
     intent_result: dict
 ) -> Task:
     sender = parsed_email.get("sender", "")
-    is_customer = sender in REGISTERED_CUSTOMERS
+    is_customer = any(
+        customer in sender
+        for customer in REGISTERED_CUSTOMERS
+    )
     assigned = INTENT_TO_AGENT.get(
         intent_result.get("primary_intent", "unknown"),
         "rag_agent"
