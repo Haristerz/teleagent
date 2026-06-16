@@ -14,10 +14,14 @@ class Settings(BaseSettings):
     db_password: str
     db_port: int = 5432
 
+    # Bedrock Guardrails
+    bedrock_guardrail_id: str
+    bedrock_guardrail_version: str
+    
     # Langfuse (observability)
     langfuse_public_key: str
     langfuse_secret_key: str
-    langfuse_host: str
+    langfuse_base_url: str
 
     # Email
     gmail_user: str

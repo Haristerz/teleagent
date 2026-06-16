@@ -13,6 +13,7 @@
 #                         Customer Reply ✅
 
 import json
+from langfuse import observe,propagate_attributes
 from app.agents.email_parser import parse_email
 from app.agents.intent_classifier import classify_intent
 from app.agents.triage import triage_email
@@ -49,7 +50,7 @@ def extract_json(text: str) -> dict:
 # ─────────────────────────────────────────
 # WORKER ROUTER
 # ─────────────────────────────────────────
-
+@observe
 def run_worker_agent(
     triage: dict,
     parsed: dict,
@@ -92,7 +93,7 @@ def run_worker_agent(
 # ─────────────────────────────────────────
 # MAIN — Process One Email
 # ─────────────────────────────────────────
-
+@observe
 def process_email(raw_email: dict) -> dict:
     """
     Full pipeline for one email.
@@ -100,109 +101,113 @@ def process_email(raw_email: dict) -> dict:
     INPUT  → raw email dict from Gmail
     OUTPUT → complete processing result
     """
+    with propagate_attributes(
+        user_id=raw_email['sender'],
+        session_id=raw_email['id'],
+        tags=["teleagent", "production"]
+    ):
+        print("\n" + "="*50)
+        print("TELEAGENT PROCESSING EMAIL")
+        print("="*50)
+        print(f"From:    {raw_email['sender']}")
+        print(f"Subject: {raw_email['subject']}")
+        print("="*50)
 
-    print("\n" + "="*50)
-    print("TELEAGENT PROCESSING EMAIL")
-    print("="*50)
-    print(f"From:    {raw_email['sender']}")
-    print(f"Subject: {raw_email['subject']}")
-    print("="*50)
+        # ─────────────────────────────
+        # STEP 1 — Parse Email
+        # ─────────────────────────────
+        print("\n[STEP 1] Email Parser Agent...")
+        parser_result = parse_email(raw_email)
 
-    # ─────────────────────────────
-    # STEP 1 — Parse Email
-    # ─────────────────────────────
-    print("\n[STEP 1] Email Parser Agent...")
-    parser_result = parse_email(raw_email)
+        # parse_email returns dict directly
+        if isinstance(parser_result, dict):
+            parsed = parser_result
+        else:
+            parsed = extract_json(str(parser_result))
 
-    # parse_email returns dict directly
-    if isinstance(parser_result, dict):
-        parsed = parser_result
-    else:
-        parsed = extract_json(str(parser_result))
+        # Add sender info
+        parsed["sender"] = raw_email["sender"]
+        parsed["subject"] = raw_email["subject"]
 
-    # Add sender info
-    parsed["sender"] = raw_email["sender"]
-    parsed["subject"] = raw_email["subject"]
+        print(f"Core Message: {parsed.get('core_message')}")
+        print(f"Account: {parsed.get('account_number')}")
 
-    print(f"Core Message: {parsed.get('core_message')}")
-    print(f"Account: {parsed.get('account_number')}")
+        # ─────────────────────────────
+        # STEP 2 — Classify Intent
+        # ─────────────────────────────
+        print("\n[STEP 2] Intent Classifier Agent...")
+        intent_result = classify_intent(parsed)
+        intent = extract_json(str(intent_result))
 
-    # ─────────────────────────────
-    # STEP 2 — Classify Intent
-    # ─────────────────────────────
-    print("\n[STEP 2] Intent Classifier Agent...")
-    intent_result = classify_intent(parsed)
-    intent = extract_json(str(intent_result))
+        print(f"Intent: {intent.get('primary_intent')}")
+        print(f"Confidence: {intent.get('confidence')}")
+        print(f"Urgency: {intent.get('urgency')}")
 
-    print(f"Intent: {intent.get('primary_intent')}")
-    print(f"Confidence: {intent.get('confidence')}")
-    print(f"Urgency: {intent.get('urgency')}")
+        # ─────────────────────────────
+        # STEP 3 — Triage
+        # ─────────────────────────────
+        print("\n[STEP 3] Triage Agent...")
+        triage_result = triage_email(parsed, intent)
+        triage = extract_json(str(triage_result))
 
-    # ─────────────────────────────
-    # STEP 3 — Triage
-    # ─────────────────────────────
-    print("\n[STEP 3] Triage Agent...")
-    triage_result = triage_email(parsed, intent)
-    triage = extract_json(str(triage_result))
+        print(f"Authorized: {triage.get('is_authorized')}")
+        print(f"Assigned to: {triage.get('assigned_agent')}")
+        print(f"Priority: {triage.get('priority')}")
 
-    print(f"Authorized: {triage.get('is_authorized')}")
-    print(f"Assigned to: {triage.get('assigned_agent')}")
-    print(f"Priority: {triage.get('priority')}")
+        # ─────────────────────────────
+        # CHECK AUTHORIZATION
+        # ─────────────────────────────
+        if not triage.get("is_authorized", False):
+            print("\n❌ Customer not authorized!")
+            send_response(
+                parsed,
+                json.dumps({
+                    "message": "We could not verify your account. Please contact BT support at 0800-800-150 with your account details."
+                })
+            )
+            return {
+                "success": False,
+                "reason": "Not authorized"
+            }
 
-    # ─────────────────────────────
-    # CHECK AUTHORIZATION
-    # ─────────────────────────────
-    if not triage.get("is_authorized", False):
-        print("\n❌ Customer not authorized!")
-        send_response(
-            parsed,
-            json.dumps({
-                "message": "We could not verify your account. Please contact BT support at 0800-800-150 with your account details."
-            })
+        # ─────────────────────────────
+        # STEP 4 — Run Worker Agent
+        # ─────────────────────────────
+        print("\n[STEP 4] Running Worker Agent...")
+        worker_result = run_worker_agent(
+            triage, parsed, intent
         )
-        return {
-            "success": False,
-            "reason": "Not authorized"
+        print(f"Worker result received ✅")
+
+        # ─────────────────────────────
+        # STEP 5 — Send Response
+        # ─────────────────────────────
+        print("\n[STEP 5] Response Agent...")
+        email_sent = send_response(
+            parsed,
+            str(worker_result)
+        )
+
+        # ─────────────────────────────
+        # FINAL RESULT
+        # ─────────────────────────────
+        result = {
+            "sender": raw_email["sender"],
+            "subject": raw_email["subject"],
+            "parsed": parsed,
+            "intent": intent,
+            "triage": triage,
+            "worker_result": str(worker_result),
+            "email_sent": email_sent,
+            "overall_success": email_sent
         }
 
-    # ─────────────────────────────
-    # STEP 4 — Run Worker Agent
-    # ─────────────────────────────
-    print("\n[STEP 4] Running Worker Agent...")
-    worker_result = run_worker_agent(
-        triage, parsed, intent
-    )
-    print(f"Worker result received ✅")
+        print("\n" + "="*50)
+        print("PROCESSING COMPLETE ✅")
+        print(f"Email sent: {email_sent}")
+        print("="*50)
 
-    # ─────────────────────────────
-    # STEP 5 — Send Response
-    # ─────────────────────────────
-    print("\n[STEP 5] Response Agent...")
-    email_sent = send_response(
-        parsed,
-        str(worker_result)
-    )
-
-    # ─────────────────────────────
-    # FINAL RESULT
-    # ─────────────────────────────
-    result = {
-        "sender": raw_email["sender"],
-        "subject": raw_email["subject"],
-        "parsed": parsed,
-        "intent": intent,
-        "triage": triage,
-        "worker_result": str(worker_result),
-        "email_sent": email_sent,
-        "overall_success": email_sent
-    }
-
-    print("\n" + "="*50)
-    print("PROCESSING COMPLETE ✅")
-    print(f"Email sent: {email_sent}")
-    print("="*50)
-
-    return result
+        return result
 
 
 # ─────────────────────────────────────────

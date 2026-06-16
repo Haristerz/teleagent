@@ -47,7 +47,12 @@ def find_payment(account_number: str) -> list:
 
 llm = LLM(
     model=f"bedrock/{settings.claude_model}",
-    aws_region_name=settings.aws_region
+    aws_region_name=settings.aws_region,
+    guardrailConfig={
+        "guardrailIdentifier": settings.bedrock_guardrail_id,
+        "guardrailVersion": settings.bedrock_guardrail_version,
+        "trace": "enabled"
+    }
 )
 
 

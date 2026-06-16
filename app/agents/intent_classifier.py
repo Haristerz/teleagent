@@ -1,10 +1,16 @@
+from langfuse import observe
 from crewai import Agent, Task, Crew, LLM
 from app.core.config import settings
 from app.core.models import EmailIntent, IntentType, UrgencyLevel, SentimentType
 
 llm = LLM(
     model=f"bedrock/{settings.claude_model}",
-    aws_region_name=settings.aws_region
+    aws_region_name=settings.aws_region,
+    guardrailConfig={
+        "guardrailIdentifier": settings.bedrock_guardrail_id,
+        "guardrailVersion": settings.bedrock_guardrail_version,
+        "trace": "enabled"
+    }
 )
 
 classifier_agent = Agent(
@@ -47,7 +53,7 @@ def create_classifier_task(parsed_email: dict) -> Task:
         expected_output="JSON with intent classification",
         agent=classifier_agent
     )
-
+@observe
 def classify_intent(parsed_email: dict) -> dict:
     task = create_classifier_task(parsed_email)
 

@@ -1,4 +1,5 @@
 # app/agents/email_parser.py
+from langfuse import observe
 from dotenv import load_dotenv
 load_dotenv()  # loads .env into OS env first
 from crewai import Agent, Task, Crew, LLM
@@ -12,7 +13,12 @@ from app.core.config import settings
 
 llm = LLM(
     model=f"bedrock/{settings.claude_model}",
-    aws_region_name=settings.aws_region
+    aws_region_name=settings.aws_region,
+    guardrailConfig={
+        "guardrailIdentifier": settings.bedrock_guardrail_id,
+        "guardrailVersion": settings.bedrock_guardrail_version,
+        "trace": "enabled"
+    }
 )
 
 
@@ -68,7 +74,7 @@ def create_parser_task(email: dict) -> Task:
 # ─────────────────────────────────────────
 # MAIN FUNCTION — Parse One Email
 # ─────────────────────────────────────────
-
+@observe
 def parse_email(email: dict) -> dict:
     task = create_parser_task(email)
 

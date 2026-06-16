@@ -1,5 +1,5 @@
 # app/agents/triage.py
-
+from langfuse import observe
 from crewai import Agent, Task, Crew, LLM
 from app.core.config import settings
 
@@ -10,7 +10,12 @@ from app.core.config import settings
 
 llm = LLM(
     model=f"bedrock/{settings.claude_model}",
-    aws_region_name=settings.aws_region
+    aws_region_name=settings.aws_region,
+    guardrailConfig={
+        "guardrailIdentifier": settings.bedrock_guardrail_id,
+        "guardrailVersion": settings.bedrock_guardrail_version,
+        "trace": "enabled"
+    }
 )
 
 
@@ -104,7 +109,7 @@ def create_triage_task(
 # ─────────────────────────────────────────
 # MAIN FUNCTION
 # ─────────────────────────────────────────
-
+@observe
 def triage_email(
     parsed_email: dict,
     intent_result: dict

@@ -1,5 +1,5 @@
 # app/agents/response_agent.py
-
+from langfuse import observe
 import json
 from app.tools.email_tool import send_email
 
@@ -23,7 +23,7 @@ def extract_message(worker_result: str) -> str:
     except:
         return worker_result
 
-
+@observe
 def send_response(
     parsed_email: dict,
     worker_result: str
