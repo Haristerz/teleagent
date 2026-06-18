@@ -1,3 +1,8 @@
+import sys
+import pysqlite3
+
+sys.modules["sqlite3"] = pysqlite3
+
 from app.tools.email_tool import read_unread_emails, mark_as_read
 from app.services.crew import process_email
 
