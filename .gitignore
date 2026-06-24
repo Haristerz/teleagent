@@ -44,3 +44,9 @@ htmlcov/
 # Distribution
 *.egg
 *.whl
+lambda-env.json
+secret-values.json
+response.json
+trust-policy.json
+bedrock-policy.json
+generate-env-json.sh
